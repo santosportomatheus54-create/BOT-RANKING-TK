@@ -1,159 +1,141 @@
-import 'dotenv/config';
-import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, REST, Routes, Events } from "discord.js";
-import { QuickDB } from "quick.db";
+import { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Events } from "discord.js";
+import fs from "fs";
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-const db = new QuickDB();
 
-const LOGS = process.env.LOGS;
+// Variáveis (coloque no Railway → Settings → Variables)
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+const LOGS_CHANNEL = process.env.LOGS_CHANNEL;
 
-// Comandos
-const comandos = [
-  { name: "painel", description: "Abrir painel" },
-  { name: "partida", description: "Ganhar recompensa" }
-];
+// Arquivo JSON para armazenar dados
+const dbFile = "./database.json";
+let dbData = {};
+if (fs.existsSync(dbFile)) dbData = JSON.parse(fs.readFileSync(dbFile).toString());
 
-const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
-(async () => {
+function saveDB() {
+  fs.writeFileSync(dbFile, JSON.stringify(dbData, null, 2));
+}
+
+// --- FUNÇÕES ---
+function getCoins(id) { return dbData[`coins_${id}`] || 0; }
+function addCoins(id, valor) { dbData[`coins_${id}`] = getCoins(id) + valor; saveDB(); }
+function removeCoins(id, valor) { const atual = getCoins(id); if (atual < valor) return false; dbData[`coins_${id}`] = atual - valor; saveDB(); return true; }
+
+function getXP(id) { return dbData[`xp_${id}`] || 0; }
+function addXP(id, valor) { dbData[`xp_${id}`] = getXP(id) + valor; saveDB(); }
+
+function addItem(id, item) { if (!dbData[`inv_${id}`]) dbData[`inv_${id}`] = []; dbData[`inv_${id}`].push(item); saveDB(); }
+function getInventory(id) { return dbData[`inv_${id}`] || []; }
+
+function setVIP(id, ms) { dbData[`vip_${id}`] = Date.now() + ms; saveDB(); }
+function isVIP(id) { return dbData[`vip_${id}`] && dbData[`vip_${id}`] > Date.now(); }
+
+// --- INTERAÇÕES ---
+client.on(Events.InteractionCreate, async interaction => {
   try {
-    await rest.put(Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID), { body: comandos });
-    console.log("Comandos registrados");
+    const canal = client.channels.cache.get(LOGS_CHANNEL);
+
+    // --- Comandos ---
+    if (interaction.isChatInputCommand()) {
+      // Painel
+      if (interaction.commandName === "painel") {
+        const embed = new EmbedBuilder().setTitle("ORG TK").setDescription("Sistema de farm");
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("perfil").setLabel("Perfil").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("ranking_xp").setLabel("Ranking XP").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("ranking_coins").setLabel("Ranking Coins").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("loja").setLabel("Loja").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId("inventario").setLabel("Inventário").setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId("caixa").setLabel("Caixa Misteriosa").setStyle(ButtonStyle.Danger)
+        );
+        return interaction.reply({ embeds: [embed], components: [row] });
+      }
+
+      // Partida
+      if (interaction.commandName === "partida") {
+        let coins = Math.floor(Math.random() * 10) + 1;
+        if (isVIP(interaction.user.id)) coins *= 2;
+        const xp = Math.floor(Math.random() * 50) + 10;
+
+        addCoins(interaction.user.id, coins);
+        addXP(interaction.user.id, xp);
+
+        canal?.send(`${interaction.user.tag} ganhou ${coins} coins e ${xp} XP`);
+        return interaction.reply(`+${coins} coins | +${xp} XP`);
+      }
+    }
+
+    // --- Botões ---
+    if (interaction.isButton()) {
+
+      // Perfil
+      if (interaction.customId === "perfil") {
+        const embed = new EmbedBuilder()
+          .setTitle("Perfil")
+          .setDescription(`Coins: ${getCoins(interaction.user.id)}\nXP: ${getXP(interaction.user.id)}\nVIP: ${isVIP(interaction.user.id) ? "Ativo" : "Inativo"}`);
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+
+      // Ranking XP
+      if (interaction.customId === "ranking_xp") {
+        const users = Object.entries(dbData)
+          .filter(([k]) => k.startsWith("xp_"))
+          .map(([k,v]) => [k.replace("xp_",""), v])
+          .sort((a,b)=>b[1]-a[1])
+          .slice(0,10);
+        let desc = "";
+        users.forEach(([id,xp],i)=>desc+=`${i+1}. <@${id}> - ${xp} XP\n`);
+        return interaction.reply({ embeds:[new EmbedBuilder().setTitle("Ranking XP").setDescription(desc||"Sem dados")], ephemeral:true });
+      }
+
+      // Ranking Coins
+      if (interaction.customId === "ranking_coins") {
+        const users = Object.entries(dbData)
+          .filter(([k]) => k.startsWith("coins_"))
+          .map(([k,v]) => [k.replace("coins_",""), v])
+          .sort((a,b)=>b[1]-a[1])
+          .slice(0,10);
+        let desc = "";
+        users.forEach(([id,coins],i)=>desc+=`${i+1}. <@${id}> - ${coins} coins\n`);
+        return interaction.reply({ embeds:[new EmbedBuilder().setTitle("Ranking Coins").setDescription(desc||"Sem dados")], ephemeral:true });
+      }
+
+      // Inventário
+      if (interaction.customId === "inventario") {
+        const inv = getInventory(interaction.user.id);
+        return interaction.reply({ embeds:[new EmbedBuilder().setTitle("Inventário").setDescription(inv.length ? inv.join("\n") : "Vazio")], ephemeral:true });
+      }
+
+      // Loja
+      if (interaction.customId === "loja") {
+        const embed = new EmbedBuilder()
+          .setTitle("Loja")
+          .setDescription("VIP 7D - 10 coins\nVIP 30D - 50 coins\nCG Mira abusiva - 45 coins\nCG Rei da TK - 45 coins");
+        return interaction.reply({ embeds:[embed], ephemeral:true });
+      }
+
+      // Caixa Misteriosa
+      if (interaction.customId === "caixa") {
+        const chance = Math.random()*100;
+        let premio = "Nada";
+
+        if(chance <= 50){ addXP(interaction.user.id,300); premio="300 XP"; }
+        else if(chance<=75){ addXP(interaction.user.id,600); premio="600 XP"; }
+        else if(chance<=85){ addCoins(interaction.user.id,100); premio="100 Coins"; }
+        else if(chance<=90){ addItem(interaction.user.id,"Passe Booya"); premio="Passe Booya"; }
+        else if(chance<=95){ addItem(interaction.user.id,"Sala paga"); premio="Sala paga"; }
+        else { addCoins(interaction.user.id,500); premio="500 Coins (Sorte Grande!)"; }
+
+        canal?.send(`${interaction.user.tag} abriu caixa e ganhou ${premio}`);
+        return interaction.reply({ content:`Você ganhou: ${premio}`, ephemeral:true });
+      }
+
+    }
+
   } catch(e) { console.error(e); }
-})();
-
-// Funções de coins
-async function saldo(id) {
-  return (await db.get(`coins_${id}`)) || 0;
-}
-
-async function removerCoins(id, valor) {
-  const atual = await saldo(id);
-  if (atual < valor) return false;
-  await db.sub(`coins_${id}`, valor);
-  return true;
-}
-
-// Comandos do bot
-client.on(Events.InteractionCreate, async i => {
-  if (i.isChatInputCommand()) {
-
-    if (i.commandName === "painel") {
-      const e = new EmbedBuilder()
-        .setTitle("ORG TK")
-        .setDescription("Sistema de farm");
-
-      const r = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("perfil").setLabel("Perfil").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("ranking").setLabel("Ranking XP").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("ranking_coins").setLabel("Ranking Coins").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("loja").setLabel("Loja").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("inventario").setLabel("Inventario").setStyle(ButtonStyle.Secondary)
-      );
-
-      await i.reply({ embeds: [e], components: [r] });
-    }
-
-    if (i.commandName === "partida") {
-      let coins = Math.floor(Math.random() * 10) + 1;
-      const vip = await db.get(`vip_${i.user.id}`);
-      if (vip && vip > Date.now()) coins *= 2;
-
-      const xp = Math.floor(Math.random() * 50) + 10;
-      await db.add(`coins_${i.user.id}`, coins);
-      await db.add(`xp_${i.user.id}`, xp);
-
-      const canal = client.channels.cache.get(LOGS);
-      canal?.send(`${i.user.tag} ganhou ${coins} coins e ${xp} XP`);
-
-      await i.reply(`+${coins} coins | +${xp} XP`);
-    }
-  }
-
-  // Botões
-  if (i.isButton()) {
-    const canal = client.channels.cache.get(LOGS);
-
-    if (i.customId === "perfil") {
-      const coins = await saldo(i.user.id);
-      const xp = (await db.get(`xp_${i.user.id}`)) || 0;
-      const e = new EmbedBuilder().setTitle("Perfil").setDescription(`Coins: ${coins}\nXP: ${xp}`);
-      return i.reply({ embeds: [e], ephemeral: true });
-    }
-
-    if (i.customId === "ranking") {
-      const all = await db.all();
-      const users = all.filter(x => x.id.startsWith("xp_")).sort((a,b)=>b.value-a.value).slice(0,10);
-      let desc = "";
-      for (let x=0;x<users.length;x++){
-        const id = users[x].id.replace("xp_","");
-        desc += `${x+1}. <@${id}> - ${users[x].value} XP\n`;
-      }
-      const e = new EmbedBuilder().setTitle("Ranking XP").setDescription(desc || "Sem dados");
-      return i.reply({ embeds: [e], ephemeral: true });
-    }
-
-    if (i.customId === "ranking_coins") {
-      const all = await db.all();
-      const users = all.filter(x => x.id.startsWith("coins_")).sort((a,b)=>b.value-a.value).slice(0,10);
-      let desc = "";
-      for (let x=0;x<users.length;x++){
-        const id = users[x].id.replace("coins_","");
-        desc += `${x+1}. <@${id}> - ${users[x].value} Coins\n`;
-      }
-      const e = new EmbedBuilder().setTitle("Ranking Coins").setDescription(desc || "Sem dados");
-      return i.reply({ embeds: [e], ephemeral: true });
-    }
-
-    if (i.customId === "inventario") {
-      const inv = (await db.get(`inv_${i.user.id}`)) || [];
-      const e = new EmbedBuilder().setTitle("Inventario").setDescription(inv.length ? inv.join("\n") : "Vazio");
-      return i.reply({ embeds: [e], ephemeral: true });
-    }
-
-    if (i.customId === "loja") {
-      const e = new EmbedBuilder().setTitle("Loja").setDescription(
-        "VIP 7D - 10 coins\nVIP 30D - 50 coins\nCG Mira abusiva - 45 coins\nCG Rei da TK - 45 coins"
-      );
-      const r = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("vip7").setLabel("VIP 7D").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("vip30").setLabel("VIP 30D").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("mira").setLabel("CG Mira abusiva").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("rei").setLabel("CG Rei da TK").setStyle(ButtonStyle.Primary)
-      );
-      return i.reply({ embeds: [e], components: [r], ephemeral: true });
-    }
-
-    // Compras
-    if (i.customId === "vip7") {
-      if (!(await removerCoins(i.user.id, 10))) return i.reply({ content: "Sem coins", ephemeral: true });
-      await db.set(`vip_${i.user.id}`, Date.now() + 604800000);
-      canal?.send(`${i.user.tag} comprou VIP 7D`);
-      return i.reply({ content: "Comprado", ephemeral: true });
-    }
-
-    if (i.customId === "vip30") {
-      if (!(await removerCoins(i.user.id, 50))) return i.reply({ content: "Sem coins", ephemeral: true });
-      await db.set(`vip_${i.user.id}`, Date.now() + 2592000000);
-      canal?.send(`${i.user.tag} comprou VIP 30D`);
-      return i.reply({ content: "Comprado", ephemeral: true });
-    }
-
-    if (i.customId === "mira") {
-      if (!(await removerCoins(i.user.id, 45))) return i.reply({ content: "Sem coins", ephemeral: true });
-      await db.push(`inv_${i.user.id}`, "Mira abusiva");
-      canal?.send(`${i.user.tag} comprou Mira abusiva`);
-      return i.reply({ content: "Adicionado", ephemeral: true });
-    }
-
-    if (i.customId === "rei") {
-      if (!(await removerCoins(i.user.id, 45))) return i.reply({ content: "Sem coins", ephemeral: true });
-      await db.push(`inv_${i.user.id}`, "Rei da TK");
-      canal?.send(`${i.user.tag} comprou Rei da TK`);
-      return i.reply({ content: "Adicionado", ephemeral: true });
-    }
-  }
 });
 
-client.once(Events.ClientReady, () => console.log("Bot online"));
-
-client.login(process.env.TOKEN);
+client.once(Events.ClientReady, ()=>console.log("Bot online"));
+client.login(TOKEN);
