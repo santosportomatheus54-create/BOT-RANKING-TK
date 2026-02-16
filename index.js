@@ -46,10 +46,15 @@ client.on(Events.InteractionCreate, async i => {
     // Painel
     if (i.isChatInputCommand() && i.commandName === "painel") {
       const e = new EmbedBuilder()
-        .setTitle("🌟 ORG TK 🌟")
+        .setTitle("🌟 ORG TK – Divirta-se e Fature Coins! 🌟")
         .setDescription(
-          "Entre no mundo da ORG TK, onde cada partida te recompensa com coins e XP!\n" +
-          "🏆 Ganhe no ranking, equipe-se na loja e abra a Caixa Misteriosa!"
+          "Entre no universo de ORG TK, o bot que transforma seu Discord em um verdadeiro mundo de aventuras e recompensas! 🏆\n\n" +
+          "🎮 Partidas emocionantes: Ganhe moedas e XP a cada jogo!\n" +
+          "💰 Ranking duplo: Compare seu desempenho com amigos – Coins e XP.\n" +
+          "🛒 Loja completa: VIPs, armas especiais e a misteriosa Caixa de Prêmios!\n" +
+          "🎒 Inventário personalizado: Guarde seus itens e conquistas.\n" +
+          "📊 Painel interativo: Tudo organizado em botões bonitos e fáceis de usar.\n\n" +
+          "Entre na ORG TK e mostre que você é o melhor farmador do servidor! 🚀"
         )
         .setColor("#00FFFF");
 
