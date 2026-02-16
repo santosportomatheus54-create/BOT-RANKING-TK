@@ -1,13 +1,12 @@
 {
-  "name": "bot-ranking",
+  "name": "orgtk-bot",
   "version": "1.0.0",
-  "description": "Bot de ranking e coins",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.13.0"
+    "discord.js": "^14.14.0"
   }
 }
